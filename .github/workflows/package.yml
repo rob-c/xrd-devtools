@@ -11,6 +11,7 @@
 #     with:
 #       package: xrdsec
 #       packages: xrdcore
+#       extras: testing
 name: Package
 
 on:
@@ -22,6 +23,12 @@ on:
         required: true
       packages:
         description: chain candidates whose wheels the clean install needs ('' for none)
+        type: string
+        default: ""
+      extras:
+        description: >-
+          extras installed with the wheel, comma-separated (e.g. 'testing'),
+          where a public module imports an optional dependency
         type: string
         default: ""
       xrdcore-ref:
@@ -87,11 +94,13 @@ jobs:
         working-directory: ${{ runner.temp }}
         env:
           PACKAGE: ${{ inputs.package }}
+          EXTRAS: ${{ inputs.extras }}
         run: |
           shopt -s nullglob
           python -m venv clean
+          wheel="$(ls "$GITHUB_WORKSPACE"/dist/*.whl)"
           clean/bin/python -m pip install --only-binary=:all: \
-            "$GITHUB_WORKSPACE"/dist/*.whl "$GITHUB_WORKSPACE"/.dependencies/wheels/*.whl
+            "$wheel${EXTRAS:+[$EXTRAS]}" "$GITHUB_WORKSPACE"/.dependencies/wheels/*.whl
           clean/bin/python -m pip check
           clean/bin/python -I "$GITHUB_WORKSPACE"/.dependencies/xrd-devtools/src/xrddevtools/check_dist.py imports "$PACKAGE"
       - name: further checks of the installed wheel

@@ -76,22 +76,33 @@ let
   # `python -I` children; they hand the child the installed packages'
   # locations and the parent's sys.path, so they run here too, with every
   # dependency on PYTHONPATH.
-  xrdsec = make "xrdsec" xrdsecSrc [ xrdcore py.asn1crypto py.cryptography ] { };
+  # xrdsec.testing.fixtures, a pytest plugin, is the ``testing`` extra.
+  xrdsec = make "xrdsec" xrdsecSrc [ xrdcore py.asn1crypto py.cryptography ] {
+    optional-dependencies.testing = [ py.pytest ];
+  };
   # botocore is xrdhttp's ``s3`` extra: the storage clients ask for it, xrdarc
-  # does not. The suite tests xrdhttp.s3 too, and its TLS socket-pair tests
-  # make a throwaway certificate (both from xrdhttp's dev extra).
+  # does not. xrdhttp.testing, the ``testing`` extra, is built on xrdsec's
+  # test server. The suite tests both, and its TLS socket-pair tests make a
+  # throwaway certificate (all from xrdhttp's dev extra).
   xrdhttp = make "xrdhttp" xrdhttpSrc [ xrdcore ] {
     optional-dependencies.s3 = [ py.botocore ];
-    nativeCheckInputs = with py; [ pytestCheckHook pytest-timeout pytest-xdist pytest-cov cryptography botocore ];
+    optional-dependencies.testing = [ xrdsec py.pytest ];
+    nativeCheckInputs = with py; [ pytestCheckHook pytest-timeout pytest-xdist pytest-cov cryptography botocore xrdsec ];
   };
   libraries = [ xrdcore xrdsec xrdhttp ];
   # ``xrdhttp[s3]``, as both clients' pyprojects require it.
   s3 = xrdhttp.optional-dependencies.s3;
-  xrdclient = make "xrdclient" xrdclientSrc (libraries ++ s3 ++ [ py.cryptography ]) { };
+  # xrdclient.fsspec_impl, the fsspec filesystems, is the ``fsspec`` extra.
+  xrdclient = make "xrdclient" xrdclientSrc (libraries ++ s3 ++ [ py.cryptography ]) {
+    optional-dependencies.fsspec = [ py.fsspec ];
+  };
   xgfalclient = make "xgfalclient" xgfalclientSrc
     ([ xrdclient ] ++ libraries ++ s3 ++ (with py; [ bcrypt cryptography ])) { };
   # xrdarc's A-REX transport is xrdhttp's session (no urllib3 since 0.4.0).
-  xrdarc = make "xrdarc" xrdarcSrc [ xrdcore xrdsec xrdhttp py.cryptography ] { };
+  # xrdarc.testing.fixtures, a pytest plugin, is the ``testing`` extra.
+  xrdarc = make "xrdarc" xrdarcSrc [ xrdcore xrdsec xrdhttp py.cryptography ] {
+    optional-dependencies.testing = [ py.pytest ];
+  };
   # Every command a user of each package tries first, and what it must print.
   versionChecks = [
     [ "xrd-fs --version" "xrd-fs ${xrdclient.version}" ]

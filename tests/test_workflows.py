@@ -99,6 +99,10 @@ def test_the_package_job_runs_check_dist_from_the_devtools_checkout():
     script = ".dependencies/xrd-devtools/src/xrddevtools/check_dist.py"
     assert f'python {script} contents "$PACKAGE" dist' in workflow
     assert f'-I "$GITHUB_WORKSPACE"/{script} imports "$PACKAGE"' in workflow
+    # A public module importing an optional dependency (a pytest plugin, the
+    # S3 backend) is imported with the extras that bring it, as publish does.
+    assert "EXTRAS: ${{ inputs.extras }}" in workflow
+    assert '"$wheel${EXTRAS:+[$EXTRAS]}"' in workflow
 
 
 def test_the_platform_jobs_build_from_the_candidates_beside_this_checkout():
