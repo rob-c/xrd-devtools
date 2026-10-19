@@ -1,0 +1,13 @@
+[tool.coverage.run]
+branch = true
+source = $source
+parallel = true$concurrency
+
+[tool.coverage.report]
+# Every line and branch, reached by a test that makes the case happen.
+fail_under = $fail_under
+exclude_also = [
+$exclude_also
+]
+show_missing = true
+skip_covered = true

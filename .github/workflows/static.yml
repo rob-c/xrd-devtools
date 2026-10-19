@@ -1,0 +1,131 @@
+# The static gates every repository of the chain runs, as one reusable job:
+# ruff (lint and format), mypy --strict, complexipy (no function above 15),
+# the take-over scorecard, the configuration conformance check and,
+# where a repository keeps a policy, the maintainability check. Each
+# repository's ci.yml calls it with the candidates it is built on:
+#
+#   static:
+#     uses: rob-c/xrd-devtools/.github/workflows/static.yml@main
+#     with:
+#       packages: xrdcore xrdsec xrdhttp
+#
+# Every command reads its configuration from the caller's pyproject.toml, so
+# the gate lives with the code it gates; this file only fixes the order and
+# makes every gate required (a missing tool fails, it does not skip).
+name: Static gates
+
+on:
+  workflow_call:
+    inputs:
+      packages:
+        description: chain candidates to check out and install (see the candidates action)
+        type: string
+        default: ""
+      xrdcore-ref:
+        type: string
+        default: main
+      xrdsec-ref:
+        type: string
+        default: main
+      xrdhttp-ref:
+        type: string
+        default: main
+      xrdclient-ref:
+        type: string
+        default: main
+      xgfalclient-ref:
+        type: string
+        default: main
+      xrdarc-ref:
+        type: string
+        default: main
+      devtools-ref:
+        type: string
+        default: main
+      python-version:
+        type: string
+        default: "3.12"
+      extras:
+        description: the caller's extras to install, e.g. "dev,krb5"
+        type: string
+        default: dev
+      system-packages:
+        description: apt packages the extras need to build (e.g. libkrb5-dev)
+        type: string
+        default: ""
+      paths:
+        description: the directories ruff checks
+        type: string
+        default: src tests
+      scorecard:
+        description: the test module holding the take-over scorecard gate ('' for none)
+        type: string
+        default: tests/test_scorecard.py
+      maintainability:
+        description: run `xrddevtools maintainability check` (needs maintainability.json)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  static:
+    name: lint, types, complexity, scorecard, conformance
+    runs-on: ubuntu-latest
+    env:
+      FORCE_COLOR: "1"
+      # Turn the gates' environmental skips into failures: here every tool
+      # they need is installed, so a skip could only hide a broken setup.
+      XRD_DEVTOOLS_REQUIRED: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python-version }}
+      - name: system packages the extras build against
+        if: inputs.system-packages != ''
+        env:
+          SYSTEM_PACKAGES: ${{ inputs.system-packages }}
+        run: sudo apt-get update && sudo apt-get install -y $SYSTEM_PACKAGES
+      - name: release-chain candidates and xrd-devtools
+        uses: rob-c/xrd-devtools/.github/actions/candidates@main
+        with:
+          packages: ${{ inputs.packages }}
+          xrdcore-ref: ${{ inputs.xrdcore-ref }}
+          xrdsec-ref: ${{ inputs.xrdsec-ref }}
+          xrdhttp-ref: ${{ inputs.xrdhttp-ref }}
+          xrdclient-ref: ${{ inputs.xrdclient-ref }}
+          xgfalclient-ref: ${{ inputs.xgfalclient-ref }}
+          xrdarc-ref: ${{ inputs.xrdarc-ref }}
+          devtools-ref: ${{ inputs.devtools-ref }}
+          install: editable
+      - env:
+          EXTRAS: ${{ inputs.extras }}
+        run: python -m pip install -e ".[$EXTRAS]"
+      - name: ruff lint and security checks
+        env:
+          LINT_PATHS: ${{ inputs.paths }}
+        run: ruff check $LINT_PATHS
+      - name: ruff format
+        env:
+          LINT_PATHS: ${{ inputs.paths }}
+        run: ruff format --check $LINT_PATHS
+      - name: mypy --strict
+        run: mypy
+      - name: cognitive complexity (no function above 15, no snapshot)
+        run: complexipy --quiet
+      # -p loads the plugin explicitly: if xrd-devtools could not be imported
+      # pytest stops here instead of the test module skipping itself.
+      - name: take-over scorecard (every measure better than the corpus median)
+        if: inputs.scorecard != ''
+        env:
+          SCORECARD: ${{ inputs.scorecard }}
+        run: python -m pytest -q -p no:cacheprovider -p xrddevtools.pytest_plugin "$SCORECARD"
+      - name: maintainability (no function over any of the five limits)
+        if: inputs.maintainability
+        run: xrddevtools maintainability check
+      - name: configuration conformance (the one standard, no suppressions, no snapshots)
+        run: xrddevtools conformance --repo .

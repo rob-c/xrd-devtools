@@ -1,0 +1,33 @@
+# xrd-devtools' own CI: the same reusable gates it offers the chain, run on
+# this commit, plus the workspace gates over the chain's main branches - a
+# change to a gate must pass the gate itself and keep the chain passing it.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  static:
+    uses: ./.github/workflows/static.yml
+    with:
+      devtools-ref: ${{ github.sha }}
+
+  test:
+    uses: ./.github/workflows/tests.yml
+    with:
+      devtools-ref: ${{ github.sha }}
+
+  chain:
+    uses: ./.github/workflows/chain.yml
+    with:
+      devtools-ref: ${{ github.sha }}

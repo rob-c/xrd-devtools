@@ -1,0 +1,31 @@
+Every repository of the chain is held to one code standard, and every line
+of it is held to the standard: old code passes the same checks as new code.
+
+- **Ruff** selects $rules, the high-confidence security checks
+  $security and the banned-API rule $banned_api_rule (see *Banned APIs*),
+  with `ignore = []` and no per-file ignores, over $trees; `ruff format`
+  formats it, $line_length columns wide.
+- **mypy** is strict (Python $python_version) over $trees. A test function
+  may leave its fixtures unannotated where `pyproject.toml` allows it, but
+  its body is still checked; only a named third-party module that ships no
+  types may be imported untyped, with the reason beside it.
+- **complexipy** allows no function above $max_complexity, over $trees,
+  with no snapshot of old offenders.
+- **Coverage** is $fail_under % of lines and branches, reached by a test
+  that makes each case happen. The only exclusions are $exclude_also; there
+  is no `omit`.
+- **Every warning is an error** (`filterwarnings = $filterwarnings`): ours
+  are fixed, not filtered.
+- **No suppression comment**: no `# noqa`, `# pragma: no cover`,
+  `# fmt: off`, `# complexipy: ignore` or `# nosec`. A `# type: ignore[code]`
+  only where it cannot be avoided (a test passing a wrongly typed value on
+  purpose), with its error code and the reason beside it or just above.
+- **No snapshot or baseline** of old findings, for any tool.
+
+The settings behind these rules are the managed blocks of `pyproject.toml`
+(between `# >>> xrddevtools sync` markers), and this section is one of the
+managed blocks of this file (between `<!-- >>> xrddevtools sync` markers).
+`xrddevtools sync` writes them all from the standard, kept once in xrd-devtools
+(`src/xrddevtools/standard`); `xrddevtools conformance`, which CI runs,
+fails if one is edited by hand. To change the standard, change it there and
+run `xrddevtools sync --workspace ..` over every repository.

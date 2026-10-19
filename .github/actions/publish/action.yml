@@ -1,0 +1,189 @@
+# Every step of a chain package's release build except the upload, once:
+# check out the tagged commit, build the sdist and wheel, `twine check
+# --strict` them, then prove the wheel releasable - its contents
+# (xrddevtools.check_dist, for the libraries), that every chain requirement is
+# already on PyPI (xrddevtools.chain_preflight, for the clients), and, from
+# a clean environment it is installed into, that the tag, the wheel metadata,
+# the runtime __version__ and a dated CHANGELOG section agree
+# (xrddevtools.release installed) - and upload the artifacts for the job that
+# releases them. xrdcore, xrdsec, xrdhttp, xrdclient and xgfalclient's
+# publish.yml and xrdarc's release.yml each carried their own copy of these
+# steps.
+#
+# The PyPI upload is NOT here and must not be: trusted publishing ties PyPI's
+# trust to the calling workflow's own job (its OIDC identity, environment
+# "pypi", `id-token: write`), so pypa/gh-action-pypi-publish stays in the
+# caller, in a job of its own that only downloads the artifact:
+#
+#   build:
+#     runs-on: ubuntu-latest
+#     steps:
+#       - uses: rob-c/xrd-devtools/.github/actions/publish@main
+#         with:
+#           package: xrdsec
+#           check-dist: true
+#   publish:
+#     needs: build
+#     environment: pypi
+#     permissions:
+#       id-token: write
+#     steps:
+#       - uses: actions/download-artifact@v4
+#         with: {name: dist, path: dist/}
+#       - uses: pypa/gh-action-pypi-publish@release/v1
+#
+# The xrd-devtools scripts run from this action's own copy of the repository
+# (github.action_path), at the ref the caller named in `uses:`: outside the
+# workspace, so nothing of it can end up in the sdist, and the same ref as
+# the steps that call them. They are plain standard-library files (the
+# pre-flight also needs `packaging`, which `build` brings).
+name: Chain release build
+description: >-
+  Build, check and stage a chain package's sdist and wheel for release (every
+  step of a publish job but the upload, which trusted publishing keeps in the
+  caller's job).
+inputs:
+  package:
+    description: the distribution to release (also its import package, unless import-name says otherwise)
+    required: true
+  import-name:
+    description: the import package, where it is not the distribution name
+    default: ""
+  python-version:
+    description: the Python the release is built and checked with
+    default: "3.12"
+  extras:
+    description: extras installed with the wheel in the clean environment (e.g. 'testing')
+    default: ""
+  check-dist:
+    description: >-
+      check the wheel and sdist contents and import every public module from
+      the clean environment (xrddevtools.check_dist; one import package per wheel)
+    default: "false"
+  preflight:
+    description: refuse unless every chain requirement of the wheel is already on PyPI
+    default: "false"
+  no-dependencies:
+    description: refuse a wheel with a default dependency (xrdcore depends on nothing)
+    default: "false"
+  absent:
+    description: modules that must NOT be installed with the wheel, separated by spaces
+    default: ""
+  post-install:
+    description: >-
+      further checks against the clean environment, a bash script run from
+      outside the checkout with $PY set to its interpreter and $DIST to the artifacts
+    default: ""
+  suite-requirements:
+    description: >-
+      if set, these requirements are installed into the clean environment and
+      the checkout's tests run against the installed wheel (src/ not on the path)
+    default: ""
+  artifact:
+    description: the name of the uploaded artifact the release job downloads
+    default: dist
+outputs:
+  python:
+    description: the clean environment's interpreter, with the wheel installed
+    value: ${{ steps.install.outputs.python }}
+runs:
+  using: composite
+  steps:
+    - uses: actions/checkout@v4
+      with:
+        persist-credentials: false
+    - uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+    - shell: bash
+      run: python -m pip install 'build>=1,<2' 'twine>=6,<7'
+    # Built before anything else could be lying beside the sources.
+    - name: build the sdist and wheel
+      shell: bash
+      run: python -m build
+    - name: strict metadata check
+      shell: bash
+      run: twine check --strict dist/*
+    - name: wheel and sdist contents
+      if: inputs.check-dist == 'true'
+      shell: bash
+      env:
+        PACKAGE: ${{ inputs.package }}
+        TOOLS: ${{ github.action_path }}/../../../src/xrddevtools
+      run: python "$TOOLS/check_dist.py" contents "$PACKAGE" dist
+    # Every chain requirement of the wheel, at its lower bound (the version
+    # this release was tested with), must already be downloadable from PyPI
+    # as a wheel: the layers below are published first.
+    - name: pre-flight - the chain below is on PyPI
+      if: inputs.preflight == 'true'
+      shell: bash
+      env:
+        TOOLS: ${{ github.action_path }}/../../../src/xrddevtools
+      run: python "$TOOLS/chain_preflight.py" pypi dist/*.whl
+    # A clean environment, every dependency from a wheel (from PyPI, never a
+    # checkout), outside the source tree: every import below is the wheel's.
+    - name: install the wheel into a clean environment
+      id: install
+      shell: bash
+      working-directory: ${{ runner.temp }}
+      env:
+        EXTRAS: ${{ inputs.extras }}
+      run: |
+        python -m venv release
+        wheel="$(ls "$GITHUB_WORKSPACE"/dist/*.whl)"
+        release/bin/python -m pip install --only-binary=:all: "$wheel${EXTRAS:+[$EXTRAS]}"
+        release/bin/python -m pip check
+        echo "python=$RUNNER_TEMP/release/bin/python" >> "$GITHUB_OUTPUT"
+    - name: import every public module from the installed wheel
+      if: inputs.check-dist == 'true'
+      shell: bash
+      working-directory: ${{ runner.temp }}
+      env:
+        PACKAGE: ${{ inputs.package }}
+        TOOLS: ${{ github.action_path }}/../../../src/xrddevtools
+      run: release/bin/python -I "$TOOLS/check_dist.py" imports "$PACKAGE"
+    - name: verify tag, runtime version, dated changelog
+      shell: bash
+      working-directory: ${{ runner.temp }}
+      env:
+        PACKAGE: ${{ inputs.package }}
+        IMPORT_NAME: ${{ inputs.import-name }}
+        RELEASE_TAG: ${{ github.ref_name }}
+        NO_DEPENDENCIES: ${{ inputs.no-dependencies }}
+        ABSENT: ${{ inputs.absent }}
+        TOOLS: ${{ github.action_path }}/../../../src/xrddevtools
+      run: |
+        options=(--tag "$RELEASE_TAG" --changelog "$GITHUB_WORKSPACE/CHANGELOG.md")
+        if [ -n "$IMPORT_NAME" ]; then options+=(--package "$IMPORT_NAME"); fi
+        if [ "$NO_DEPENDENCIES" = true ]; then options+=(--no-dependencies); fi
+        for name in $ABSENT; do options+=(--absent "$name"); done
+        release/bin/python -I "$TOOLS/release.py" installed "$PACKAGE" "${options[@]}"
+    - name: further checks of the installed wheel
+      if: inputs.post-install != ''
+      shell: bash
+      working-directory: ${{ runner.temp }}
+      env:
+        POST_INSTALL: ${{ inputs.post-install }}
+      run: |
+        export PY="$RUNNER_TEMP/release/bin/python" DIST="$GITHUB_WORKSPACE/dist"
+        bash -euo pipefail -c "$POST_INSTALL"
+    # The checkout's tests against the installed wheel: pytest's pythonpath
+    # must not name src/ for this to mean anything, which the first command
+    # proves. A gate needing xrd-devtools or the dev extra skips here (it is
+    # required in CI).
+    - name: run the suite against the installed wheel
+      if: inputs.suite-requirements != ''
+      shell: bash
+      env:
+        PACKAGE: ${{ inputs.package }}
+        IMPORT_NAME: ${{ inputs.import-name }}
+        REQUIREMENTS: ${{ inputs.suite-requirements }}
+      run: |
+        py="$RUNNER_TEMP/release/bin/python"
+        "$py" -m pip install --only-binary=:all: $REQUIREMENTS
+        "$py" -c 'import importlib, sys; m = importlib.import_module(sys.argv[1]); assert m.__file__.startswith(sys.prefix), m.__file__' "${IMPORT_NAME:-$PACKAGE}"
+        "$py" -m pytest -q -p no:cacheprovider -n auto
+    - uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.artifact }}
+        path: dist/

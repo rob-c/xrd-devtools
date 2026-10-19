@@ -1,0 +1,16 @@
+[tool.ruff]
+line-length = $line_length
+target-version = $target_version
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+  $select,
+  # High-confidence security checks. The wider S family cannot tell the
+  # protocol-mandated hashes, parsers and subprocesses of a storage client
+  # from unsafe application code, so it is reviewed rather than enabled.
+  $security,$banned_api_rule
+]
+# No rule is ignored and there are no per-file ignores: old code passes the
+# same checks as new code.
+ignore = []

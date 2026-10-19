@@ -1,0 +1,141 @@
+# The one way a CI job of the chain gets the other repositories it is built
+# on: until the 0.4.0 chain is on PyPI, every job builds against coordinated
+# candidates checked out side by side, the same layout a developer has.
+# Replaces xrdclient's .github/actions/library-candidates and xgfalclient's
+# .github/actions/candidates, which differed only in which repositories they
+# checked out. Publish workflows do NOT use this: a release is validated
+# against PyPI only (xrddevtools preflight pypi).
+#
+# xrd-devtools itself is always checked out beside the candidates: its gates
+# (the scorecard plugin, `xrddevtools conformance`, ...) are what the jobs
+# run, and each repository's pytest finds it at .dependencies/xrd-devtools.
+name: Release-chain candidates
+description: >-
+  Check out the named rob-c repositories of the chain, and xrd-devtools, at
+  the given refs under one directory, then install them editable into the
+  current Python, build their wheels into <path>/wheels, or neither.
+inputs:
+  packages:
+    description: >-
+      The chain repositories to check out, separated by spaces, e.g.
+      'xrdcore xrdsec xrdhttp'. Order does not matter: they are installed or
+      built lowest layer first.
+    default: xrdcore xrdsec xrdhttp
+  xrdcore-ref:
+    description: rob-c/xrdcore branch, tag or commit
+    default: main
+  xrdsec-ref:
+    description: rob-c/xrdsec branch, tag or commit
+    default: main
+  xrdhttp-ref:
+    description: rob-c/xrdhttp branch, tag or commit
+    default: main
+  xrdclient-ref:
+    description: rob-c/xrdclient branch, tag or commit
+    default: main
+  xgfalclient-ref:
+    description: rob-c/xgfalclient branch, tag or commit
+    default: main
+  xrdarc-ref:
+    description: rob-c/xrdarc branch, tag or commit
+    default: main
+  xrdwms-ref:
+    description: rob-c/xrdwms branch, tag or commit
+    default: main
+  devtools-ref:
+    description: rob-c/xrd-devtools branch, tag or commit
+    default: main
+  path:
+    description: the directory the checkouts go under
+    default: .dependencies
+  install:
+    description: >-
+      'editable' (the candidates and xrd-devtools, into the current Python),
+      'wheels' (build the candidates' wheels into <path>/wheels) or 'none'
+    default: editable
+runs:
+  using: composite
+  steps:
+    - if: contains(format(' {0} ', inputs.packages), ' xrdcore ')
+      uses: actions/checkout@v4
+      with:
+        repository: rob-c/xrdcore
+        ref: ${{ inputs.xrdcore-ref }}
+        path: ${{ inputs.path }}/xrdcore
+        persist-credentials: false
+    - if: contains(format(' {0} ', inputs.packages), ' xrdsec ')
+      uses: actions/checkout@v4
+      with:
+        repository: rob-c/xrdsec
+        ref: ${{ inputs.xrdsec-ref }}
+        path: ${{ inputs.path }}/xrdsec
+        persist-credentials: false
+    - if: contains(format(' {0} ', inputs.packages), ' xrdhttp ')
+      uses: actions/checkout@v4
+      with:
+        repository: rob-c/xrdhttp
+        ref: ${{ inputs.xrdhttp-ref }}
+        path: ${{ inputs.path }}/xrdhttp
+        persist-credentials: false
+    - if: contains(format(' {0} ', inputs.packages), ' xrdclient ')
+      uses: actions/checkout@v4
+      with:
+        repository: rob-c/xrdclient
+        ref: ${{ inputs.xrdclient-ref }}
+        path: ${{ inputs.path }}/xrdclient
+        persist-credentials: false
+    - if: contains(format(' {0} ', inputs.packages), ' xgfalclient ')
+      uses: actions/checkout@v4
+      with:
+        repository: rob-c/xgfalclient
+        ref: ${{ inputs.xgfalclient-ref }}
+        path: ${{ inputs.path }}/xgfalclient
+        persist-credentials: false
+    - if: contains(format(' {0} ', inputs.packages), ' xrdarc ')
+      uses: actions/checkout@v4
+      with:
+        repository: rob-c/xrdarc
+        ref: ${{ inputs.xrdarc-ref }}
+        path: ${{ inputs.path }}/xrdarc
+        persist-credentials: false
+    - if: contains(format(' {0} ', inputs.packages), ' xrdwms ')
+      uses: actions/checkout@v4
+      with:
+        repository: rob-c/xrdwms
+        ref: ${{ inputs.xrdwms-ref }}
+        path: ${{ inputs.path }}/xrdwms
+        persist-credentials: false
+    - uses: actions/checkout@v4
+      with:
+        repository: rob-c/xrd-devtools
+        ref: ${{ inputs.devtools-ref }}
+        path: ${{ inputs.path }}/xrd-devtools
+        persist-credentials: false
+    # In dependency order, so each editable install finds what it needs
+    # already installed rather than fetching a release from PyPI.
+    - if: inputs.install == 'editable'
+      shell: bash
+      env:
+        PACKAGES: ${{ inputs.packages }}
+        ROOT: ${{ inputs.path }}
+      run: |
+        editable=()
+        for name in xrdcore xrdsec xrdhttp xrdclient xgfalclient xrdarc xrdwms; do
+          case " $PACKAGES " in *" $name "*) editable+=(-e "$ROOT/$name") ;; esac
+        done
+        python -m pip install "${editable[@]}" -e "$ROOT/xrd-devtools"
+    # Wheels for jobs that must prove a binary-only install: pass
+    # <path>/wheels/*.whl (or --find-links <path>/wheels) to pip.
+    - if: inputs.install == 'wheels'
+      shell: bash
+      env:
+        PACKAGES: ${{ inputs.packages }}
+        ROOT: ${{ inputs.path }}
+      run: |
+        python -m pip install --only-binary=:all: 'build>=1,<2'
+        mkdir -p "$ROOT/wheels"
+        for name in xrdcore xrdsec xrdhttp xrdclient xgfalclient xrdarc xrdwms; do
+          case " $PACKAGES " in
+            *" $name "*) python -m build --wheel --outdir "$ROOT/wheels" "$ROOT/$name" ;;
+          esac
+        done

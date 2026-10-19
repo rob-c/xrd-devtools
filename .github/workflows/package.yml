@@ -1,0 +1,104 @@
+# The libraries' release-artifact job, as one reusable workflow: build the
+# sdist and wheel, `twine check --strict` them, check their contents
+# (xrddevtools.check_dist: no caches, coverage data or stray top-level files;
+# py.typed present), then install the wheel - every dependency from a wheel,
+# as a user on a supported platform must never need a compiler - into a
+# clean environment and import every public module from it. xrdcore, xrdsec
+# and xrdhttp each carried an identical copy of this job and of the script.
+#
+#   package:
+#     uses: rob-c/xrd-devtools/.github/workflows/package.yml@main
+#     with:
+#       package: xrdsec
+#       packages: xrdcore
+name: Package
+
+on:
+  workflow_call:
+    inputs:
+      package:
+        description: the distribution (and import package) under test
+        type: string
+        required: true
+      packages:
+        description: chain candidates whose wheels the clean install needs ('' for none)
+        type: string
+        default: ""
+      xrdcore-ref:
+        type: string
+        default: main
+      xrdsec-ref:
+        type: string
+        default: main
+      xrdhttp-ref:
+        type: string
+        default: main
+      devtools-ref:
+        type: string
+        default: main
+      post-install:
+        description: >-
+          further checks against the clean environment, a bash script run with
+          $PY set to its interpreter and $DIST to the built artifacts
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python-version: ["3.11", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: candidate wheels and xrd-devtools
+        uses: rob-c/xrd-devtools/.github/actions/candidates@main
+        with:
+          packages: ${{ inputs.packages }}
+          xrdcore-ref: ${{ inputs.xrdcore-ref }}
+          xrdsec-ref: ${{ inputs.xrdsec-ref }}
+          xrdhttp-ref: ${{ inputs.xrdhttp-ref }}
+          devtools-ref: ${{ inputs.devtools-ref }}
+          install: wheels
+      - run: >-
+          python -m pip install --only-binary=:all: 'build>=1,<2' 'twine>=6,<7'
+      - name: build the sdist and wheel
+        run: python -m build
+      - name: inspect the distributions
+        env:
+          PACKAGE: ${{ inputs.package }}
+        run: |
+          twine check --strict dist/*
+          python .dependencies/xrd-devtools/src/xrddevtools/check_dist.py contents "$PACKAGE" dist
+      # The source tree is not on the path, so the imports below can only be
+      # satisfied by the installed wheel; check_dist.py runs as a plain file
+      # because nothing but the wheel and its dependencies may be installed.
+      - name: install the wheel into a clean environment and import every public module
+        working-directory: ${{ runner.temp }}
+        env:
+          PACKAGE: ${{ inputs.package }}
+        run: |
+          shopt -s nullglob
+          python -m venv clean
+          clean/bin/python -m pip install --only-binary=:all: \
+            "$GITHUB_WORKSPACE"/dist/*.whl "$GITHUB_WORKSPACE"/.dependencies/wheels/*.whl
+          clean/bin/python -m pip check
+          clean/bin/python -I "$GITHUB_WORKSPACE"/.dependencies/xrd-devtools/src/xrddevtools/check_dist.py imports "$PACKAGE"
+      - name: further checks of the installed wheel
+        if: inputs.post-install != ''
+        working-directory: ${{ runner.temp }}
+        env:
+          POST_INSTALL: ${{ inputs.post-install }}
+        run: |
+          export PY="$RUNNER_TEMP/clean/bin/python" DIST="$GITHUB_WORKSPACE/dist"
+          bash -euo pipefail -c "$POST_INSTALL"

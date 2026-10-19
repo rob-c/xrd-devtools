@@ -1,0 +1,7 @@
+# Tests may leave a fixture-taking test function unannotated, but its body is
+# still checked, so a type error (or an unused ignore) in a test fails too.
+[[tool.mypy.overrides]]
+module = ["tests.*"]
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+check_untyped_defs = true

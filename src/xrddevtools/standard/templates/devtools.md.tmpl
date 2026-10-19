@@ -1,0 +1,22 @@
+The chain's gates and tools - the take-over scorecard and the
+release-metadata and maintainability gates, `xrddevtools conformance`,
+`dupes` and `sync`, the release pre-flight and the packaging tools - live
+in [xrd-devtools](https://github.com/rob-c/xrd-devtools). It is never
+uploaded to PyPI and cannot be a dependency (PyPI refuses direct-URL
+requirements), so it is used from a checkout:
+
+- **A developer** keeps it beside this repository (`../xrd-devtools`, the
+  workspace layout). pytest's `pythonpath` lists `../xrd-devtools/src`, so
+  the gate tests find it with nothing installed; `pip install -e
+  ../xrd-devtools` once gives the `xrddevtools` command.
+- **CI** checks it out under `.dependencies/xrd-devtools` (the shared
+  `candidates` action always does), which `pythonpath` lists too. It loads
+  the plugin with `pytest -p xrddevtools.pytest_plugin`, which fails at
+  start-up if it cannot be imported, and sets `XRD_DEVTOOLS_REQUIRED=1`, so
+  a missing radon or complexipy fails rather than skips. This repository's
+  workflows are xrd-devtools' reusable workflows and actions: CI runs only
+  once `rob-c/xrd-devtools` exists.
+- **Anywhere else** - a wheel-only test environment, a distribution build -
+  `pip install -e` a checkout or put its `src` on `PYTHONPATH`. Without
+  one, the gate tests (`tests/test_scorecard.py`,
+  `tests/test_release_metadata.py`) skip, saying why.

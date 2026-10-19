@@ -1,0 +1,78 @@
+# The workspace gates: what no single repository can check on its own. All
+# seven repositories of the chain are checked out side by side (the caller at
+# the commit under test, passed as its <name>-ref) and:
+#
+# * `xrddevtools dupes` fails on a function duplicated across repositories,
+#   and on a same-named one 0.85 or more alike (a copy that has begun to
+#   drift), with no allow-list (one implementation per behaviour is why the
+#   libraries exist);
+# * `xrddevtools conformance` checks every repository's tool configuration
+#   against the one standard.
+#
+# Every repository's ci.yml calls it, so a change cannot reintroduce a copy
+# or a weaker configuration anywhere in the chain unnoticed:
+#
+#   chain:
+#     uses: rob-c/xrd-devtools/.github/workflows/chain.yml@main
+#     with:
+#       xrdclient-ref: ${{ github.sha }}
+name: Chain gates
+
+on:
+  workflow_call:
+    inputs:
+      xrdcore-ref:
+        type: string
+        default: main
+      xrdsec-ref:
+        type: string
+        default: main
+      xrdhttp-ref:
+        type: string
+        default: main
+      xrdclient-ref:
+        type: string
+        default: main
+      xgfalclient-ref:
+        type: string
+        default: main
+      xrdarc-ref:
+        type: string
+        default: main
+      xrdwms-ref:
+        type: string
+        default: main
+      devtools-ref:
+        type: string
+        default: main
+
+permissions:
+  contents: read
+
+jobs:
+  chain:
+    name: duplicates and conformance across the chain
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: the whole workspace
+        uses: rob-c/xrd-devtools/.github/actions/candidates@main
+        with:
+          packages: xrdcore xrdsec xrdhttp xrdclient xgfalclient xrdarc xrdwms
+          xrdcore-ref: ${{ inputs.xrdcore-ref }}
+          xrdsec-ref: ${{ inputs.xrdsec-ref }}
+          xrdhttp-ref: ${{ inputs.xrdhttp-ref }}
+          xrdclient-ref: ${{ inputs.xrdclient-ref }}
+          xgfalclient-ref: ${{ inputs.xgfalclient-ref }}
+          xrdarc-ref: ${{ inputs.xrdarc-ref }}
+          xrdwms-ref: ${{ inputs.xrdwms-ref }}
+          devtools-ref: ${{ inputs.devtools-ref }}
+          path: workspace
+          install: none
+      - run: python -m pip install -e workspace/xrd-devtools
+      - name: no function duplicated or near-duplicated across repositories
+        run: xrddevtools dupes --workspace workspace --fail-near 0.85
+      - name: every repository's configuration is the standard
+        run: xrddevtools conformance --workspace workspace

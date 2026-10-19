@@ -1,0 +1,120 @@
+# The test matrix every repository of the chain runs, as one reusable job:
+# pytest under xdist on each OS/Python/extras cell, with the coverage gate
+# (``fail_under`` and the exclusions come from the caller's pyproject.toml,
+# so the gate lives with the configuration). Each repository's ci.yml calls
+# it with the candidates it is built on and, where it differs, its matrix:
+#
+#   test:
+#     uses: rob-c/xrd-devtools/.github/workflows/tests.yml@main
+#     with:
+#       packages: xrdcore xrdsec xrdhttp
+#       markers: not interop and not parity
+#
+# pytest-cov rather than ``coverage run``: only it collects the workers
+# xdist spawns.
+name: Tests
+
+on:
+  workflow_call:
+    inputs:
+      packages:
+        description: chain candidates to check out and install (see the candidates action)
+        type: string
+        default: ""
+      xrdcore-ref:
+        type: string
+        default: main
+      xrdsec-ref:
+        type: string
+        default: main
+      xrdhttp-ref:
+        type: string
+        default: main
+      xrdclient-ref:
+        type: string
+        default: main
+      xgfalclient-ref:
+        type: string
+        default: main
+      xrdarc-ref:
+        type: string
+        default: main
+      devtools-ref:
+        type: string
+        default: main
+      os:
+        description: JSON list of runners
+        type: string
+        default: '["ubuntu-latest", "macos-latest"]'
+      python-versions:
+        description: JSON list of Python versions
+        type: string
+        default: '["3.11", "3.12", "3.13", "3.14"]'
+      extras:
+        description: JSON list of extras sets, one matrix axis (e.g. '["dev", "dev,fast"]')
+        type: string
+        default: '["dev"]'
+      include:
+        description: JSON list of extra matrix cells
+        type: string
+        default: "[]"
+      system-packages:
+        description: apt packages the extras need to build
+        type: string
+        default: ""
+      markers:
+        description: pytest -m expression ('' runs every test)
+        type: string
+        default: ""
+      pytest-args:
+        description: further pytest arguments (the coverage options)
+        type: string
+        default: --cov --cov-report=term-missing:skip-covered
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ fromJSON(inputs.os) }}
+        python-version: ${{ fromJSON(inputs.python-versions) }}
+        extras: ${{ fromJSON(inputs.extras) }}
+        include: ${{ fromJSON(inputs.include) }}
+    env:
+      FORCE_COLOR: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: system packages the extras build against
+        if: inputs.system-packages != '' && runner.os == 'Linux'
+        env:
+          SYSTEM_PACKAGES: ${{ inputs.system-packages }}
+        run: sudo apt-get update && sudo apt-get install -y $SYSTEM_PACKAGES
+      - name: release-chain candidates and xrd-devtools
+        uses: rob-c/xrd-devtools/.github/actions/candidates@main
+        with:
+          packages: ${{ inputs.packages }}
+          xrdcore-ref: ${{ inputs.xrdcore-ref }}
+          xrdsec-ref: ${{ inputs.xrdsec-ref }}
+          xrdhttp-ref: ${{ inputs.xrdhttp-ref }}
+          xrdclient-ref: ${{ inputs.xrdclient-ref }}
+          xgfalclient-ref: ${{ inputs.xgfalclient-ref }}
+          xrdarc-ref: ${{ inputs.xrdarc-ref }}
+          devtools-ref: ${{ inputs.devtools-ref }}
+          install: editable
+      - env:
+          EXTRAS: ${{ matrix.extras || 'dev' }}
+        run: python -m pip install -e ".[$EXTRAS]"
+      - name: pytest with the coverage gate
+        env:
+          MARKERS: ${{ inputs.markers }}
+          PYTEST_ARGS: ${{ inputs.pytest-args }}
+        run: python -m pytest -q -p no:cacheprovider -n auto ${MARKERS:+-m "$MARKERS"} $PYTEST_ARGS

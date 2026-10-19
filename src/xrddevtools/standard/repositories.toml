@@ -1,0 +1,146 @@
+# What may differ between the chain's repositories, declared once.
+#
+# Everything a managed block of a repository's pyproject.toml or
+# CONTRIBUTING.md holds is either the standard (standard.toml) or one of the
+# differences below; `xrddevtools sync` writes the blocks from the two, and
+# `xrddevtools conformance` fails a block that says anything else. A
+# difference not expressible here is a change to the standard, not an
+# exception for one repository.
+#
+# Per role: the ban groups (standard.toml [bans]) its repositories ban, and
+# the managed sections of their CONTRIBUTING.md.
+[roles.library]
+bans = ["http-stack", "urllib-opener", "gssapi", "pykrb5", "s3", "fanout", "xml-parsers"]
+contributing = ["code-standard", "banned-apis", "devtools"]
+
+[roles.client]
+bans = [
+  "http-client", "http-stack", "urllib-opener", "gssapi", "pykrb5", "tls-contexts",
+  "fanout", "xml-parsers", "s3",
+]
+contributing = ["code-standard", "banned-apis", "devtools"]
+
+# xrdwms, the jobs layer on top of every client: banned what a client is.
+[roles.jobs]
+bans = [
+  "http-client", "http-stack", "urllib-opener", "gssapi", "pykrb5", "tls-contexts",
+  "fanout", "xml-parsers", "s3",
+]
+contributing = ["code-standard", "banned-apis", "devtools"]
+
+# xrd-devtools reads the chain's checkouts and wheels; it bans only importing
+# the chain, and is itself where the tools come from.
+[roles.tooling]
+bans = []
+contributing = ["code-standard", "banned-apis"]
+
+# Per repository:
+#   role            - one of [roles] above;
+#   depends-on      - the chain packages it may import (anything else of the
+#                     chain is banned, worded by standard.toml [layering]);
+#   owns            - ban groups or names it implements, so does not ban;
+#   bans            - bans of its own: name -> message;
+#   messages        - its own wording of a ban group's message;
+#   coverage-source - the packages coverage measures;
+#   coverage-concurrency - what coverage must follow besides the main thread;
+#   relax-test-annotations - test functions may go unannotated (bodies still
+#                     checked); false holds the tests to the full strictness;
+#   untyped         - third-party modules that ship no type information, each
+#                     with the reason mypy may treat it as untyped.
+
+[repositories.xrdcore]
+role = "library"
+depends-on = []
+# fanout.run_all/Pool are built on ThreadPoolExecutor and safexml on the
+# ElementTree parsers (whose tests compare against them).
+owns = ["fanout", "xml-parsers"]
+coverage-source = ["xrdcore"]
+relax-test-annotations = true
+
+[repositories.xrdcore.bans]
+"http.client" = "xrdcore speaks no protocol: HTTP is xrdhttp's (xrdhttp.session)"
+"ssl" = "xrdcore speaks no protocol: TLS contexts are xrdsec.tls's"
+"cryptography" = "xrdcore has no third-party dependency: cryptography belongs in xrdsec"
+"asn1crypto" = "xrdcore has no third-party dependency: ASN.1 belongs in xrdsec (xrdsec.der)"
+
+[repositories.xrdsec]
+role = "library"
+depends-on = ["xrdcore"]
+# xrdsec.krb5.gss is the one python-gssapi wrapper (tests/test_package.py
+# pins that no other module imports it).
+owns = ["gssapi"]
+coverage-source = ["xrdsec"]
+relax-test-annotations = true
+
+[repositories.xrdsec.messages]
+http-stack = "xrdsec takes no third-party HTTP stack: its few HTTPS calls (voms_client) use http.client with xrdsec.tls contexts"
+urllib-opener = "urllib's opener has none of the chain's TLS rules: use http.client with an xrdsec.tls context, as voms_client does"
+
+[[repositories.xrdsec.untyped]]
+modules = ["asn1crypto.*"]
+reason = "asn1crypto 1.5 ships neither inline types nor a stub package."
+
+[[repositories.xrdsec.untyped]]
+modules = ["gssapi", "gssapi.*"]
+reason = "python-gssapi (the krb5 extra) is typed (py.typed) when installed, but it is a native build that is absent wherever it cannot be built, such as a lint-only environment; installed, its own types are still checked."
+
+[repositories.xrdhttp]
+role = "library"
+# xrdsec only through xrdhttp.testing (the testing extra; tests/test_package.py).
+depends-on = ["xrdcore", "xrdsec"]
+# Only xrdhttp.s3 imports botocore (tests/test_package.py).
+owns = ["botocore"]
+coverage-source = ["xrdhttp"]
+relax-test-annotations = true
+
+[repositories.xrdhttp.messages]
+gssapi = "Kerberos GSS-API is xrdsec.krb5.gss (the xrdsec[krb5] extra), one wrapper for every client; xrdhttp takes credentials from its caller (session Auth)"
+
+[repositories.xrdclient]
+role = "client"
+depends-on = ["xrdcore", "xrdsec", "xrdhttp"]
+coverage-source = ["xrdclient"]
+relax-test-annotations = true
+
+[[repositories.xrdclient.untyped]]
+modules = ["XRootD.*"]
+reason = "XRootD, the official pyxrootd bindings the parity tests, benchmarks and examples compare against, ships neither inline types nor stubs. (fsspec ships none either, but the adapter subclasses it, so typings/fsspec holds stubs for exactly the part of it this project uses.)"
+
+[repositories.xgfalclient]
+role = "client"
+depends-on = ["xrdcore", "xrdsec", "xrdhttp", "xrdclient"]
+coverage-source = ["xgfalclient", "gfal2", "gfal2_util"]
+coverage-concurrency = ["thread"]
+relax-test-annotations = false
+
+[[repositories.xgfalclient.untyped]]
+modules = ["paramiko", "paramiko.*"]
+reason = "paramiko (the sftp extra) ships no type information."
+
+[repositories.xrdarc]
+role = "client"
+depends-on = ["xrdcore", "xrdsec", "xrdhttp"]
+coverage-source = ["xrdarc"]
+coverage-concurrency = ["thread"]
+relax-test-annotations = false
+
+[repositories.xrdwms]
+role = "jobs"
+depends-on = ["xrdcore", "xrdsec", "xrdhttp", "xrdclient", "xgfalclient", "xrdarc"]
+coverage-source = ["xrdwms"]
+coverage-concurrency = ["thread"]
+relax-test-annotations = false
+
+[[repositories.xrdwms.untyped]]
+modules = ["cloudpickle.*", "fsspec.*"]
+reason = "cloudpickle (the payload pickler) and fsspec (reached through xrdclient.fsspec_impl, which subclasses it) ship no type information at all."
+
+[repositories.xrd-devtools]
+role = "tooling"
+depends-on = []
+coverage-source = ["xrddevtools"]
+relax-test-annotations = true
+
+[[repositories.xrd-devtools.untyped]]
+modules = ["radon.*"]
+reason = "radon 6 ships neither inline types nor a stub package."

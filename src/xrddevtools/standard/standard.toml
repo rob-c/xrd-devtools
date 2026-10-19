@@ -1,0 +1,134 @@
+# The chain's code standard: the one place it is written down.
+#
+# `xrddevtools sync` renders these values (through the templates beside this
+# file) into the managed blocks of every repository's pyproject.toml and
+# CONTRIBUTING.md; `xrddevtools conformance` fails a repository whose block
+# differs from what sync would write, and checks the values themselves.
+# Change the standard here, run `xrddevtools sync --workspace ..`, and land
+# every repository's fixes with it (CONTRIBUTING.md, "A gate changes only on
+# purpose"). What may differ between repositories is in repositories.toml.
+
+[ruff]
+line-length = 100
+target-version = "py311"
+# The rule families, then the high-confidence security checks (the wider S
+# family cannot tell protocol-mandated hashes, parsers and subprocesses from
+# unsafe application code, so it is reviewed rather than enabled wholesale).
+select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM", "RUF"]
+security = ["S102", "S307", "S506", "S602", "S608", "S609", "S701"]
+# The banned-API rule, selected exactly when a repository bans something.
+banned-api-rule = "TID251"
+
+[mypy]
+python_version = "3.11"
+strict = true
+
+[complexipy]
+max-complexity-allowed = 15
+failed = true
+
+[coverage]
+fail_under = 100
+# The only lines no test needs to run: type-checking-only code, overload
+# signatures, abstract bodies, stub ellipses and script entry points.
+exclude_also = [
+  "if TYPE_CHECKING:",
+  "@overload",
+  "raise NotImplementedError",
+  "\\.\\.\\.$",
+  "if __name__ == .__main__.:",
+]
+
+[pytest]
+# Every warning is an error; a repository may add one exemption per
+# third-party warning it cannot fix (category and module, never a message).
+filterwarnings = ["error"]
+
+# How a repository's ban on importing another repository of the chain is
+# worded, by how the two are related ($repo bans $other).
+[layering]
+# $other is built on $repo (directly or not).
+below = "$repo sits below $other in the chain and never imports it (dependency direction)"
+# Two libraries, neither built on the other.
+peer = "$repo and $other never import each other: a caller joins them (TLS contexts reach xrdhttp as arguments)"
+# Two clients, neither built on the other.
+beside = "$repo does not depend on $other: the clients share code through the libraries, not each other"
+# The tooling, which checks the chain and never imports it.
+tooling = "xrd-devtools never imports the chain it checks: read the checkout's files, or run the package in a subprocess"
+
+# The same, as CONTRIBUTING's ban table explains it.
+[layering-why]
+below = "they are built on this repository; the dependency direction never points up"
+peer = "two libraries neither built on the other: a caller joins them, passing one's objects to the other"
+beside = "the clients share code through the libraries, never through each other"
+tooling = "the tools judge checkouts and wheels that may be absent, half-refactored or another version: they read files or run a subprocess, never import"
+
+# The ban groups: what one library owns, nothing else does itself. `names`
+# are what ruff's TID251 refuses, `msg` names the replacement (the lint
+# message), `why` is CONTRIBUTING's explanation. A role bans the groups
+# repositories.toml lists for it; a repository can own (not ban) a group or a
+# name, add bans of its own, and word a message its own way.
+[bans.http-client]
+names = ["http.client"]
+msg = "HTTP is xrdhttp's: requests through xrdhttp.session.Session; connections, and the http.client types a client names (IncompleteRead, HTTPMessage, ...), through xrdhttp.connection"
+why = "one pooled session with the chain's redirect, retry, `100-continue` and credential rules; `xrdhttp.connection` re-exports the stdlib's own `http.client` classes, so `except`/`isinstance` mean the same"
+
+[bans.http-stack]
+names = ["urllib3", "requests", "httpx"]
+msg = "the chain has no third-party HTTP stack: use xrdhttp.session.Session (pooling, redirects, retries; TLS from xrdsec.tls)"
+why = "one HTTP stack for the whole chain, with its TLS, redirect and retry rules"
+
+[bans.urllib-opener]
+names = ["urllib.request"]
+msg = "use xrdhttp.session.Session: urllib's opener has none of the chain's TLS, redirect or retry rules"
+why = "urllib's opener knows none of the grid's TLS (CAs, CRLs, proxies) and follows redirects with credentials attached"
+
+[bans.gssapi]
+names = ["gssapi"]
+msg = "Kerberos GSS-API is xrdsec.krb5.gss (the xrdsec[krb5] extra), one wrapper for every client"
+why = "one GSS-API wrapper, behind the `xrdsec[krb5]` extra"
+
+[bans.pykrb5]
+names = ["krb5"]
+msg = "pykrb5 is not a dependency: credential caches are xrdsec.krb5.caches / xrdsec.krb5.ccache, GSS-API is xrdsec.krb5.gss"
+why = "the pure-Python ccache, KCM and keyring readers replaced it"
+
+[bans.tls-contexts]
+names = [
+  "ssl.PROTOCOL_TLS",
+  "ssl.PROTOCOL_TLS_CLIENT",
+  "ssl.PROTOCOL_TLS_SERVER",
+  "ssl._create_unverified_context",
+  "ssl.create_default_context",
+]
+msg = "TLS contexts are built by xrdsec.tls.client_context (grid CAs, CRLs, proxies, caching); GSI data channels by xrdsec.gsi.gss.data_contexts; tests by xrdsec.testing.pki.PKI.client_context / server_context"
+why = "grid CAs, CRLs, proxies and context caching in one builder. `ssl.SSLContext` itself is not banned, so annotations still name it: building one needs a `PROTOCOL_*` constant (without one the constructor warns, and warnings are errors), and that is what the ban catches"
+
+[bans.fanout]
+names = ["concurrent.futures.ThreadPoolExecutor"]
+msg = "a fan-out is xrdcore.fanout.run_all (first failure raised, the rest stopped); a long-lived pool is xrdcore.fanout.Pool"
+why = "the first failure raised as itself and the rest stopped; a long-lived pool made on first use and made again in a forked child"
+
+[bans.xml-parsers]
+names = [
+  "xml.etree.ElementTree.XML",
+  "xml.etree.ElementTree.XMLParser",
+  "xml.etree.ElementTree.XMLPullParser",
+  "xml.etree.ElementTree.fromstring",
+  "xml.etree.ElementTree.fromstringlist",
+  "xml.etree.ElementTree.iterparse",
+  "xml.etree.ElementTree.parse",
+  "xml.dom.minidom",
+  "xml.dom.pulldom",
+  "xml.parsers.expat",
+  "xml.sax.make_parser",
+  "xml.sax.parse",
+  "xml.sax.parseString",
+]
+msg = "parse XML with xrdcore.safexml.fromstring, which refuses DOCTYPEs and entities"
+why = "it refuses DOCTYPEs, so no entity is declared, expanded or fetched. Building and writing trees (`ET.Element`, `ET.tostring`) and `xml.sax.saxutils.escape` stay allowed"
+
+[bans.s3]
+names = ["botocore", "boto3"]
+msg = "S3 signing and the S3 codec are xrdhttp.s3 (the xrdhttp[s3] extra); only xrdhttp.s3 imports botocore"
+why = "S3 signing and the S3 codec, behind the `xrdhttp[s3]` extra"

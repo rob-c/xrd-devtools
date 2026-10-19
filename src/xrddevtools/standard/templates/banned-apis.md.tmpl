@@ -1,0 +1,10 @@
+Ruff's `TID251` rule refuses the APIs whose job another part of the chain
+does, in every tree ruff checks ($trees), with no per-file ignore and no
+`noqa`; the list is `[tool.ruff.lint.flake8-tidy-imports.banned-api]` in
+`pyproject.toml`, and each entry's message names what to use instead. A
+need for a banned API is met by the library that owns it growing an API,
+with its tests - never by an exception here.
+
+| Banned | Use instead | Why |
+|---|---|---|
+$rows
