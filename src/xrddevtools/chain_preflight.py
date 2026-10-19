@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""Pre-flight checks for releasing the chain's six packages together.
+"""Pre-flight checks for releasing the chain's seven packages together.
 
-The 0.4.0 release is six packages, published lowest layer first and strictly
+The 0.4.0 release is seven packages, published lowest layer first and strictly
 in this order (:data:`CHAIN`) - xrdcore, xrdsec, xrdhttp, xrdclient, xgfalclient,
-xrdarc - and each step's wheel must install from what the previous steps put
-on PyPI. xrdsec goes before xrdhttp: xrdhttp's ``testing`` extra (what
-``xrdhttp.testing`` is built on) requires it, and xrdhttp's publish job
-installs that extra. Two repositories of the workspace are not part of the
-release: xrdwms (0.1.x, released on its own schedule, after the chain it
-sits on) and xrd-devtools, which is never published at all (its
+xrdarc, xrdwms - and each step's wheel must install from what the previous
+steps put on PyPI. xrdsec goes before xrdhttp: xrdhttp's ``testing`` extra
+(what ``xrdhttp.testing`` is built on) requires it, and xrdhttp's publish job
+installs that extra. xrdwms is last because it sits on every other package
+(xrdarc behind its ``arc`` extra). One repository of the workspace is not
+part of the release: xrd-devtools, which is never published at all (its
 ``Private :: Do Not Upload`` classifier makes PyPI refuse it). A mismatch
 found after the first upload is expensive: PyPI never forgets a version, so
 the fix is a yank and a new release of every package above it.
@@ -62,7 +62,7 @@ from packaging.specifiers import SpecifierSet
 from packaging.utils import canonicalize_name
 
 #: The chain, lowest layer first: also the release order.
-CHAIN = ("xrdcore", "xrdsec", "xrdhttp", "xrdclient", "xgfalclient", "xrdarc")
+CHAIN = ("xrdcore", "xrdsec", "xrdhttp", "xrdclient", "xgfalclient", "xrdarc", "xrdwms")
 #: Per package: the chain packages it must require, and those it may.
 #: Anything else of the chain is an upward or sideways dependency.
 FAMILY: dict[str, tuple[frozenset[str], frozenset[str]]] = {
@@ -73,6 +73,11 @@ FAMILY: dict[str, tuple[frozenset[str], frozenset[str]]] = {
     "xgfalclient": (frozenset({"xrdclient", "xrdcore", "xrdsec", "xrdhttp"}), frozenset()),
     # The A-REX transport is xrdhttp's session since 0.4.0.
     "xrdarc": (frozenset({"xrdcore", "xrdsec", "xrdhttp"}), frozenset()),
+    # The jobs layer: every library and both storage clients (xrdarc is an extra).
+    "xrdwms": (
+        frozenset({"xrdcore", "xrdsec", "xrdhttp", "xrdclient", "xgfalclient"}),
+        frozenset(),
+    ),
 }
 #: ``(package, requirement)`` pairs pinned exactly rather than to a range.
 EXACT = frozenset({("xgfalclient", "xrdclient")})

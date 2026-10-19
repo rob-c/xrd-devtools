@@ -407,6 +407,17 @@ GOOD_CHAIN = {
         {},
     ),
     "xrdarc": (["xrdcore>=0.4.0,<0.5", "xrdsec>=0.4.0,<0.5", "xrdhttp>=0.4.0,<0.5"], {}),
+    "xrdwms": (
+        [
+            "dask[distributed]>=2025.1",
+            "xrdcore>=0.4.0,<0.5",
+            "xrdsec>=0.4.0,<0.5",
+            "xrdhttp>=0.4.0,<0.5",
+            "xrdclient>=0.4.0,<0.5",
+            "xgfalclient>=0.4.0,<0.5",
+        ],
+        {"arc": ["xrdarc>=0.4.0,<0.5"]},
+    ),
 }
 
 
@@ -501,7 +512,7 @@ def test_missing_checkouts_versions_and_changelog_sections_are_findings(chain):
 def test_require_dated_refuses_an_unreleased_changelog_section(chain):
     write_checkout(chain, "xrdcore", [], heading="## [0.4.0] - 2026-10-20")
     findings = preflight(chain, "--require-dated")
-    assert len(findings) == 5
+    assert len(findings) == 6  # every package of the chain but the dated xrdcore
     assert "xrdcore" not in " ".join(findings)
     assert findings[0] == "xrdsec: CHANGELOG.md [0.4.0] is not dated ('## [0.4.0] - Unreleased')"
 

@@ -47,8 +47,9 @@ chain whose gates it enforces; it is never uploaded to PyPI.
 
 - `preflight` enforces the release order: an extra may only require a
   package released before its own (xrdhttp's `testing` extra on xrdsec, so
-  xrdsec is published first); its help says where xrdwms and xrd-devtools
-  stand (neither is part of the six-package release).
+  xrdsec is published first). xrdwms is the seventh and last package of the
+  0.4.0 release (it requires every library and both storage clients, xrdarc
+  through its `arc` extra); xrd-devtools is never released.
 - xrd-devtools is held to its own gates, the take-over scorecard included
   (`tests/test_scorecard.py`; the scorecard's unit tests are
   `tests/test_scorecard_metrics.py`).
