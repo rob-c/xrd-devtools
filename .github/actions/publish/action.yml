@@ -6,8 +6,7 @@
 # a clean environment it is installed into, that the tag, the wheel metadata,
 # the runtime __version__ and a dated CHANGELOG section agree
 # (xrddevtools.release installed) - and upload the artifacts for the job that
-# releases them. xrdcore, xrdsec, xrdhttp, xrdclient and xgfalclient's
-# publish.yml and xrdarc's release.yml each carried their own copy of these
+# releases them. Every package's publish.yml carried its own copy of these
 # steps.
 #
 # The PyPI upload is NOT here and must not be: trusted publishing ties PyPI's

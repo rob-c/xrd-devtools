@@ -17,15 +17,8 @@ ROOT = Path(__file__).resolve().parents[1]
 WORKFLOWS = ROOT / ".github" / "workflows"
 ACTION = ROOT / ".github" / "actions" / "candidates" / "action.yml"
 PUBLISH = ROOT / ".github" / "actions" / "publish" / "action.yml"
-#: The repositories that release, and the workflow each builds its release in.
-RELEASED = {
-    "xrdcore": "publish.yml",
-    "xrdsec": "publish.yml",
-    "xrdhttp": "publish.yml",
-    "xrdclient": "publish.yml",
-    "xgfalclient": "publish.yml",
-    "xrdarc": "release.yml",
-}
+#: The repositories that release; each builds its release in ``publish.yml``.
+RELEASED = ("xrdcore", "xrdsec", "xrdhttp", "xrdclient", "xgfalclient", "xrdarc", "xrdwms")
 CHAIN = ("xrdcore", "xrdsec", "xrdhttp", "xrdclient", "xgfalclient", "xrdarc", "xrdwms")
 REUSABLE = ("static.yml", "tests.yml", "chain.yml", "package.yml", "platforms.yml")
 
@@ -170,8 +163,8 @@ def test_every_release_workflow_of_the_workspace_builds_with_it_and_passes_known
     """The sibling checkouts' release workflows, where the workspace has them."""
     known = _inputs(PUBLISH.read_text(encoding="utf-8"))
     assert {"package", "check-dist", "preflight", "no-dependencies", "absent"} <= known
-    for name, workflow in RELEASED.items():
-        path = ROOT.parent / name / ".github" / "workflows" / workflow
+    for name in RELEASED:
+        path = ROOT.parent / name / ".github" / "workflows" / "publish.yml"
         if not path.is_file():
             continue
         text = path.read_text(encoding="utf-8")

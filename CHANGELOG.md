@@ -77,8 +77,8 @@ chain whose gates it enforces; it is never uploaded to PyPI.
   pre-flight (`preflight`), a clean install with `pip check`, `release
   installed`, `post-install` checks, the suite against the installed wheel
   (`suite-requirements`), the artifact upload - running the tools from the
-  action's own copy of this repository. xrdcore, xrdsec, xrdhttp,
-  xrdclient and xgfalclient's `publish.yml` and xrdarc's `release.yml` use
+  action's own copy of this repository. every package's `publish.yml`
+  (xrdcore, xrdsec, xrdhttp, xrdclient, xgfalclient, xrdarc, xrdwms) uses
   it; the PyPI upload stays in each caller's job, as trusted publishing
   requires.
 - `sync` (`xrddevtools sync --workspace DIR | --repo PATH [--check]`) and

@@ -29,8 +29,8 @@ This module is both halves, once:
       ``Programming Language`` classifiers name the same Python versions
       (:data:`SUPPORTED_PYTHONS`), the repository, issue and changelog URLs
       are this repository's, and the license files are present;
-    * **the release workflow**, where there is one (``publish.yml`` or
-      ``release.yml``): it builds through xrd-devtools' shared ``publish``
+    * **the release workflow**, where there is one (``publish.yml``, the
+      name every repository of the chain uses): it builds through xrd-devtools' shared ``publish``
       action for this package, and a PyPI upload goes through trusted
       publishing;
     * a documentation site (``mkdocs.yml``) is built into ``site/``, which
@@ -69,8 +69,8 @@ SUPPORTED_PYTHONS = ("3.11", "3.12", "3.13", "3.14")
 OWNER_URL = "https://github.com/rob-c"
 #: The files a release carries beside the code (LGPL: the license and the GPL it extends).
 LICENSE_FILES = ("LICENSE", "COPYING")
-#: The release workflows a repository may have, and the shared action they must use.
-RELEASE_WORKFLOWS = ("publish.yml", "release.yml")
+#: The release workflow a repository may have, and the shared action it must use.
+RELEASE_WORKFLOW = "publish.yml"
 PUBLISH_ACTION = "uses: rob-c/xrd-devtools/.github/actions/publish@main"
 #: The only way an upload may reach PyPI: trusted publishing, from the caller's job.
 PYPI_UPLOAD = "uses: pypa/gh-action-pypi-publish@release/v1"
@@ -282,20 +282,19 @@ def _url_problems(urls: Mapping[str, str], repository: str) -> list[str]:
 
 def workflow_problems(project: Project) -> list[str]:
     """The release workflow, if any, must build through the shared publish action."""
-    workflows = project.root / ".github" / "workflows"
+    workflow = project.root / ".github" / "workflows" / RELEASE_WORKFLOW
+    if not workflow.is_file():
+        return []
+    text = workflow.read_text(encoding="utf-8")
     return [
-        f".github/workflows/{name}: {problem}"
-        for name in RELEASE_WORKFLOWS
-        if (workflows / name).is_file()
-        for problem in _workflow_text_problems(
-            (workflows / name).read_text(encoding="utf-8"), project.name
-        )
+        f".github/workflows/{RELEASE_WORKFLOW}: {problem}"
+        for problem in _workflow_text_problems(text, project.name)
     ]
 
 
 def _workflow_text_problems(text: str, name: str) -> list[str]:
     """What a release workflow's ``text`` must say: the shared build, trusted publishing."""
-    # A commented-out upload job (xrdarc's, until it goes to PyPI) is not an upload.
+    # A commented-out upload job is not an upload.
     steps = "\n".join(line for line in text.splitlines() if not line.lstrip().startswith("#"))
     return failed(
         (
