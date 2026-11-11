@@ -5,6 +5,12 @@ chain whose gates it enforces; it is never uploaded to PyPI.
 
 ## [0.4.0] - Unreleased
 
+### Tested
+
+- The gates (ruff, `mypy --strict`, complexipy, maintainability, conformance,
+  100% coverage) run on **macOS** (Apple Silicon) for the whole chain, which is
+  where the end-to-end X.509 testing happens.
+
 ### Added
 
 - First release: the chain's tooling, gathered from where each piece had
