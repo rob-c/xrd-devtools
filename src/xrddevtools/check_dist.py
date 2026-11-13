@@ -61,11 +61,16 @@ def _one(directory: Path, pattern: str) -> Path:
     return found[0]
 
 
-def contents(package: str, dist: Path) -> None:
-    """Check the wheel's and the sdist's member lists (:class:`SystemExit` on the first problem)."""
+def contents(package: str, dist: Path, allow: Sequence[str] = ()) -> None:
+    """Check the wheel's and the sdist's member lists (:class:`SystemExit` on the first problem).
+
+    ``allow`` names further top-level entries the wheel is meant to carry: a
+    distribution that replaces another ships that other package's import names
+    (``xgfalclient`` carries ``gfal2`` and ``gfal2_util``), which is deliberate.
+    """
     wheel = _one(dist, f"{package}-*.whl")
     names = zipfile.ZipFile(wheel).namelist()
-    _check_wheel(wheel.name, package, names)
+    _check_wheel(wheel.name, package, names, allow)
     sdist = _one(dist, f"{package}-*.tar.gz")
     with tarfile.open(sdist) as archive:
         members = [member.name for member in archive.getmembers()]
@@ -75,9 +80,9 @@ def contents(package: str, dist: Path) -> None:
     print(f"{wheel.name}: {len(names)} files; {sdist.name}: {len(members)} members")
 
 
-def _check_wheel(wheel: str, package: str, names: Sequence[str]) -> None:
-    """The wheel holds the package (``py.typed`` included) and its metadata, and no bytecode."""
-    stray = _stray_tops(package, names)
+def _check_wheel(wheel: str, package: str, names: Sequence[str], allow: Sequence[str] = ()) -> None:
+    """The wheel holds the package (``py.typed`` included), what it means to, and no bytecode."""
+    stray = [top for top in _stray_tops(package, names) if top not in set(allow)]
     if stray:
         raise SystemExit(f"{wheel} carries files outside the package: {stray}")
     if f"{package}/py.typed" not in names:
@@ -139,12 +144,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     1); a malformed command line is a usage error (status 2).
     """
     args = list(sys.argv[1:] if argv is None else argv)
-    if len(args) == 3 and args[0] == "contents":
-        contents(args[1], Path(args[2]))
+    if args and args[0] == "contents" and len(args) >= 3:
+        rest = list(args[3:])
+        allow = [
+            rest[i + 1] for i, word in enumerate(rest) if word == "--allow" and i + 1 < len(rest)
+        ]
+        contents(args[1], Path(args[2]), allow)
     elif len(args) == 2 and args[0] == "imports":
         imports(args[1])
     else:
-        print("usage: check_dist.py contents <package> <dist> | imports <package>", file=sys.stderr)
+        print(
+            "usage: check_dist.py contents <package> <dist> [--allow TOP ...] | imports <package>",
+            file=sys.stderr,
+        )
         return 2
     return 0
 

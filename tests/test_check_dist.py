@@ -114,3 +114,15 @@ def test_a_malformed_command_line_is_a_usage_error(capsys, monkeypatch):
     monkeypatch.setattr(sys, "argv", ["check_dist.py", "contents"])
     assert check_dist.main() == 2
     assert "usage: check_dist.py" in capsys.readouterr().err
+
+
+def test_a_named_top_level_is_allowed_when_the_report_declares_it(tmp_path):
+    """A distribution that replaces another ships its import names on purpose.
+
+    `xgfalclient` carries `gfal2` and `gfal2_util`; naming them means "expected",
+    and anything else at the top level is still a fault.
+    """
+    artifacts(tmp_path / "dist", [*GOOD_WHEEL, "gfal2/__init__.py"], GOOD_SDIST)
+    with pytest.raises(SystemExit, match=re.escape("files outside the package: ['gfal2']")):
+        check_dist.contents("pkg", tmp_path / "dist")
+    assert check_dist.main(["contents", "pkg", str(tmp_path / "dist"), "--allow", "gfal2"]) == 0

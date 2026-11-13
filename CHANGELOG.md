@@ -3,7 +3,7 @@
 Notable changes are recorded here. This repository is versioned with the
 chain whose gates it enforces; it is never uploaded to PyPI.
 
-## [0.4.0] - Unreleased
+## [0.5.0] - 2026-11-12
 
 ### Tested
 
